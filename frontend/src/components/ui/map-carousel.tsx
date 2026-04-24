@@ -110,6 +110,8 @@ export interface MapCarouselProps {
      * If not provided, no filters will be shown.
      */
     filters?: FilterSectionConfig[]
+    /** Whether to show heat dots instead of price markers. */
+    useHeatmap?: boolean
   }
   actions?: {
     /** Called when a user selects a location via marker or card click. */
@@ -471,6 +473,7 @@ interface LeafletMapConfig {
   selectedIndex: number | null
   onSelectLocation: (location: Location, index: number) => void
   style?: React.CSSProperties
+  useHeatmap?: boolean
 }
 
 function VanillaLeafletMap({
@@ -480,7 +483,8 @@ function VanillaLeafletMap({
   locations,
   selectedIndex,
   onSelectLocation,
-  style
+  style,
+  useHeatmap
 }: LeafletMapConfig) {
   const containerRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -542,23 +546,67 @@ function VanillaLeafletMap({
     markersRef.current.forEach((m: { remove: () => void }) => m.remove())
     markersRef.current = []
 
+    // Add pulsating animation styles to head
+    const STYLE_ID = 'heatmap-pulse-style'
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement('style')
+      style.id = STYLE_ID
+      style.innerHTML = `
+        @keyframes heatmap-pulse {
+          0% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
+          50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.4; }
+          100% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
+        }
+      `
+      document.head.appendChild(style)
+    }
+
     locations.forEach((location, index) => {
       const isSelected = selectedIndex === index
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
+      const intensity = location.rating ? Math.min(location.rating / 10, 1) : 0.5
+      const color = useHeatmap ? `rgba(245, 158, 11, ${0.4 + intensity * 0.4})` : (isSelected ? '#4f46e5' : '#ffffff')
+      const borderColor = useHeatmap ? 'rgba(245, 158, 11, 0.8)' : (isSelected ? '#4f46e5' : '#e5e7eb')
+
+      const html = useHeatmap ? `
+        <div style="
+          width: ${20 + intensity * 40}px;
+          height: ${20 + intensity * 40}px;
+          background: ${color};
+          border: 2px solid ${borderColor};
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 15px ${color};
+          cursor: pointer;
+          transition: all 0.2s;
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          animation: heatmap-pulse 2s infinite ease-in-out;
+        ">
+        </div>
+      ` : `
+        <div style="
           position: absolute; left: 50%; top: 50%;
           transform: translate(-50%, -50%);
           display: inline-block; padding: 4px 8px; border-radius: 8px;
-          font-size: 12px; font-weight: 600;
-          font-family: system-ui, -apple-system, sans-serif;
+          font-size: 11px; font-weight: 700;
+          font-family: 'JetBrains Mono', monospace;
           white-space: nowrap;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.1);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           z-index: ${isSelected ? '1000' : '1'};
-          ${isSelected ? 'background-color: #18181b; color: white;' : 'background-color: white; color: #18181b;'}
-        ">${location.price !== undefined ? `$${location.price}` : location.name ?? 'Location'}</div>`,
-        iconSize: [60, 24],
-        iconAnchor: [30, 12]
+          border: 2px solid ${isSelected ? '#000' : '#e5e7eb'};
+          ${isSelected ? 'background-color: #000; color: white;' : 'background-color: white; color: #000;'}
+        ">${location.price !== undefined ? `$${location.price}M` : location.name ?? ''}</div>
+      `
+
+      const icon = L.divIcon({
+        className: 'custom-div-icon',
+        html: html,
+        iconSize: useHeatmap ? [60, 60] : [60, 24],
+        iconAnchor: useHeatmap ? [30, 30] : [30, 12]
       })
 
       const marker = L.marker(location.coordinates, {
@@ -974,6 +1022,7 @@ export function MapCarousel({ data, actions, appearance }: MapCarouselProps) {
             locations={filteredLocations}
             selectedIndex={selectedIndex}
             onSelectLocation={handleMapMarkerClick}
+            useHeatmap={data?.useHeatmap}
           />
         </div>
       </div>
