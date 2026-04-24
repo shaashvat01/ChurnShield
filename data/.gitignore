@@ -1,0 +1,10 @@
+# Large data files stored in S3 - see S3_DATA_LOCATION.md
+*.csv
+*.txt
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+*.xml
+*.zip
