@@ -7,7 +7,7 @@ app = cdk.App()
 BlastRadiusApiStack(
     app,
     "BlastRadiusApiStack",
-    env=cdk.Environment(account="216989103356", region="us-west-2"),
+    env=cdk.Environment(account="216989103356", region="us-east-1"),
 )
 
 app.synth()

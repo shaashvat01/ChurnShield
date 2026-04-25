@@ -28,7 +28,6 @@ export interface Location {
   priceLabel?: string
   priceSubtext?: string
   rating?: number
-  iconUrl?: string
   coordinates: [number, number] // [lat, lng]
   link?: string
 }
@@ -494,6 +493,9 @@ function VanillaLeafletMap({
   const leafletRef = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const zipCirclesRef = useRef<Array<{ circle: any; intensity: number }>>([])
+  const zoomHandlerRef = useRef<(() => void) | null>(null)
   const callbackRef = useRef(onSelectLocation)
   const [ready, setReady] = useState(false)
 
@@ -538,6 +540,14 @@ function VanillaLeafletMap({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-center the map smoothly when the requested center changes
+  // (e.g. switching from the Intel demo to the Microchip WARN event).
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map || !ready) return
+    map.flyTo(center, zoom, { animate: true, duration: 0.8 })
+  }, [center[0], center[1], zoom, ready]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync markers whenever locations or selection change
   useEffect(() => {
     const L = leafletRef.current
@@ -546,79 +556,308 @@ function VanillaLeafletMap({
 
     markersRef.current.forEach((m: { remove: () => void }) => m.remove())
     markersRef.current = []
+    zipCirclesRef.current = []
 
-    // Add pulsating animation styles to head
+    if (zoomHandlerRef.current) {
+      map.off('zoomend', zoomHandlerRef.current)
+      zoomHandlerRef.current = null
+    }
+
+    // Add animation + tooltip styles to head
     const STYLE_ID = 'heatmap-pulse-style'
     if (!document.getElementById(STYLE_ID)) {
       const style = document.createElement('style')
       style.id = STYLE_ID
       style.innerHTML = `
-        @keyframes heatmap-pulse {
-          0% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
-          50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.4; }
-          100% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.7; }
+        @keyframes marker-bounce {
+          0%, 100% { transform: translate(-50%, -100%) scale(1); }
+          50% { transform: translate(-50%, -100%) scale(1.1); }
+        }
+        .business-marker:hover {
+          transform: translate(-50%, -100%) scale(1.15) !important;
+          z-index: 9999 !important;
+        }
+        /* ZIP region tooltip — clean white pill, no leaflet chrome */
+        .leaflet-tooltip.zip-tooltip-wrapper {
+          background: transparent;
+          border: none;
+          box-shadow: none;
+          padding: 0;
+          white-space: nowrap;
+          pointer-events: none;
+          transition: opacity 0.25s ease;
+        }
+        .leaflet-tooltip.zip-tooltip-wrapper:before {
+          display: none !important;
+        }
+        .zip-tooltip {
+          background: rgba(255, 255, 255, 0.92);
+          border: 1px solid rgba(31, 41, 55, 0.85);
+          border-radius: 6px;
+          padding: 4px 9px;
+          font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Inter", ui-sans-serif, system-ui, sans-serif;
+          text-align: center;
+          line-height: 1.2;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+        }
+        .zip-tooltip-impact {
+          color: #1F2937;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: -0.01em;
+          font-feature-settings: "tnum" 1, "lnum" 1;
+        }
+        .zip-tooltip-zip {
+          color: #6B7280;
+          font-size: 9px;
+          font-weight: 500;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          margin-top: 1px;
         }
       `
       document.head.appendChild(style)
     }
 
+    // Category icons (SVG paths)
+    const categoryIcons: Record<string, string> = {
+      restaurant: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg>',
+      cafe: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.89 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM4 19h16v2H4z"/></svg>',
+      childcare: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>',
+      personal_services: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M9.64 7.64c.23-.5.36-1.05.36-1.64 0-2.21-1.79-4-4-4S2 3.79 2 6s1.79 4 4 4c.59 0 1.14-.13 1.64-.36L10 12l-2.36 2.36C7.14 14.13 6.59 14 6 14c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4c0-.59-.13-1.14-.36-1.64L12 14l7 7h3v-1L9.64 7.64zM6 8c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm0 12c-1.1 0-2-.89-2-2s.9-2 2-2 2 .89 2 2-.9 2-2 2zm6-7.5c-.28 0-.5-.22-.5-.5s.22-.5.5-.5.5.22.5.5-.22.5-.5.5zM19 3l-6 6 2 2 7-7V3z"/></svg>',
+      retail: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg>',
+      fitness: '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29z"/></svg>',
+      zip: '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>',
+    }
+
+    // Category colors
+    const categoryColors: Record<string, { bg: string; border: string; text: string }> = {
+      restaurant: { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E' },
+      cafe: { bg: '#DBEAFE', border: '#3B82F6', text: '#1E40AF' },
+      childcare: { bg: '#FCE7F3', border: '#EC4899', text: '#9D174D' },
+      personal_services: { bg: '#E0E7FF', border: '#6366F1', text: '#3730A3' },
+      retail: { bg: '#D1FAE5', border: '#10B981', text: '#065F46' },
+      fitness: { bg: '#FEE2E2', border: '#EF4444', text: '#991B1B' },
+      zip: { bg: '#1F2937', border: '#F59E0B', text: '#FFFFFF' },
+    }
+
     locations.forEach((location, index) => {
       const isSelected = selectedIndex === index
-      const intensity = location.rating ? Math.min(location.rating / 10, 1) : 0.5
-      const color = useHeatmap ? `rgba(245, 158, 11, ${0.4 + intensity * 0.4})` : (isSelected ? '#4f46e5' : '#ffffff')
-      const borderColor = useHeatmap ? 'rgba(245, 158, 11, 0.8)' : (isSelected ? '#4f46e5' : '#e5e7eb')
+      const locAny = location as any
+      const markerType = locAny.markerType || 'zip'
+      const category = locAny.category || 'zip'
+      const intensity = location.rating ? Math.min(location.rating / 40, 1) : 0.5
+      const colors = categoryColors[category] || categoryColors.zip
+      const icon = categoryIcons[category] || categoryIcons.zip
 
-      const html = useHeatmap ? `
-        <div style="
-          width: ${20 + intensity * 40}px;
-          height: ${20 + intensity * 40}px;
-          background: ${color};
-          border: 2px solid ${borderColor};
-          border-radius: 50%;
+      if (markerType === 'epicenter') {
+        // Source-employer marker: bold red pin sitting above everything else.
+        const html = `
+          <div class="epicenter-marker" style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -100%);
+            z-index: 5000;
+          ">
+            <div style="
+              background: #DC2626;
+              border: 2.5px solid #7F1D1D;
+              border-radius: 9px;
+              padding: 5px 11px;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45), 0 2px 6px rgba(0,0,0,0.25);
+              white-space: nowrap;
+            ">
+              <span style="
+                width: 7px;
+                height: 7px;
+                background: #FFF;
+                border-radius: 50%;
+                box-shadow: 0 0 6px rgba(255,255,255,0.95);
+              "></span>
+              <span style="
+                font-size: 11px;
+                font-weight: 700;
+                color: #FFF;
+                letter-spacing: 0.04em;
+                font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Inter', ui-sans-serif, system-ui, sans-serif;
+              ">${location.priceLabel || 'EPICENTER'}</span>
+            </div>
+            <div style="
+              width: 0;
+              height: 0;
+              border-left: 7px solid transparent;
+              border-right: 7px solid transparent;
+              border-top: 9px solid #7F1D1D;
+              margin-top: -1px;
+            "></div>
+            <div style="
+              width: 12px;
+              height: 12px;
+              background: #DC2626;
+              border: 2px solid #FFF;
+              border-radius: 50%;
+              margin-top: -3px;
+              box-shadow: 0 0 14px rgba(220, 38, 38, 0.7);
+            "></div>
+          </div>
+        `
+
+        const epicenterIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: html,
+          iconSize: [120, 60],
+          iconAnchor: [60, 60],
+        })
+
+        const marker = L.marker(location.coordinates, {
+          icon: epicenterIcon,
+          zIndexOffset: 5000,
+        })
+        marker.on('click', () => callbackRef.current(location, index))
+        marker.addTo(map)
+        markersRef.current.push(marker)
+        return
+      }
+
+      if (markerType === 'zip') {
+        // Render ZIP as a real geographic circle (radius in meters).
+        // Phoenix-area ZCTAs span ~1–3 miles. Scale by impact intensity.
+        const radiusMeters = 1600 + intensity * 2400 // ~1mi to ~2.5mi
+        const fillColor = isSelected ? '#DC2626' : '#F59E0B'
+        const strokeColor = isSelected ? '#7F1D1D' : '#B45309'
+
+        const circle = L.circle(location.coordinates, {
+          radius: radiusMeters,
+          fillColor,
+          fillOpacity: 0.18,
+          color: strokeColor,
+          weight: isSelected ? 2 : 1.25,
+          opacity: 0.55,
+        })
+
+        const tooltipHtml = `
+          <div class="zip-tooltip">
+            <div class="zip-tooltip-impact">${location.priceLabel || ''}</div>
+            <div class="zip-tooltip-zip">ZIP ${locAny.zipData?.zip_code || ''}</div>
+          </div>
+        `
+        circle.bindTooltip(tooltipHtml, {
+          permanent: true,
+          direction: 'center',
+          className: 'zip-tooltip-wrapper',
+          opacity: 1,
+        })
+
+        circle.on('click', () => callbackRef.current(location, index))
+        circle.addTo(map)
+        markersRef.current.push(circle)
+        zipCirclesRef.current.push({ circle, intensity })
+        return
+      }
+
+      // Business marker - pin style with icon
+      const impactPct = location.price || 0
+      const urgencyColor = impactPct > 30 ? '#EF4444' : impactPct > 20 ? '#F59E0B' : '#10B981'
+      const html = `
+        <div class="business-marker" style="
           display: flex;
+          flex-direction: column;
           align-items: center;
-          justify-content: center;
-          box-shadow: 0 0 15px ${color};
           cursor: pointer;
-          transition: all 0.2s;
+          transition: all 0.15s ease;
           position: absolute;
           left: 50%;
           top: 50%;
-          transform: translate(-50%, -50%);
-          animation: heatmap-pulse 2s infinite ease-in-out;
+          transform: translate(-50%, -100%);
+          z-index: ${isSelected ? 1000 : 10};
         ">
-        ${location.iconUrl ? `<img src="${location.iconUrl}" style="width: 60%; height: 60%; object-fit: contain; filter: brightness(0) invert(1);" />` : ''}
+          <div style="
+            background: ${isSelected ? '#1F2937' : colors.bg};
+            border: 2px solid ${isSelected ? '#000' : colors.border};
+            border-radius: 8px;
+            padding: 4px 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            white-space: nowrap;
+          ">
+            <span style="color: ${isSelected ? '#FFF' : colors.text}; display: flex; align-items: center;">
+              ${icon}
+            </span>
+            <span style="
+              font-size: 11px;
+              font-weight: 600;
+              color: ${isSelected ? '#FFF' : urgencyColor};
+              font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Inter', ui-sans-serif, system-ui, sans-serif;
+              font-feature-settings: 'tnum' 1, 'lnum' 1;
+            ">${location.priceLabel || ''}</span>
+          </div>
+          <div style="
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid ${isSelected ? '#000' : colors.border};
+            margin-top: -1px;
+          "></div>
         </div>
-      ` : `
-        <div style="
-          position: absolute; left: 50%; top: 50%;
-          transform: translate(-50%, -50%);
-          display: inline-block; padding: 4px 8px; border-radius: 8px;
-          font-size: 11px; font-weight: 700;
-          font-family: 'JetBrains Mono', monospace;
-          white-space: nowrap;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          z-index: ${isSelected ? '1000' : '1'};
-          border: 2px solid ${isSelected ? '#000' : '#e5e7eb'};
-          ${isSelected ? 'background-color: #000; color: white;' : 'background-color: white; color: #000;'}
-        ">${location.price !== undefined ? `$${location.price}M` : location.name ?? ''}</div>
       `
 
-      const icon = L.divIcon({
+      const markerIcon = L.divIcon({
         className: 'custom-div-icon',
         html: html,
-        iconSize: useHeatmap ? [60, 60] : [60, 24],
-        iconAnchor: useHeatmap ? [30, 30] : [30, 12]
+        iconSize: [80, 40],
+        iconAnchor: [40, 40],
       })
 
       const marker = L.marker(location.coordinates, {
-        icon,
-        zIndexOffset: isSelected ? 1000 : 0
+        icon: markerIcon,
+        zIndexOffset: isSelected ? 1000 : 100,
       })
       marker.on('click', () => callbackRef.current(location, index))
       marker.addTo(map)
       markersRef.current.push(marker)
     })
+
+    // Zoom-responsive ZIP circles: as user zooms in, fade the fill so
+    // the businesses inside become readable. Tooltip hides at deep zoom.
+    const updateZipStyles = () => {
+      const z = map.getZoom()
+      // zoom 11 (metro) -> light tint, zoom 14+ (street) -> nearly invisible
+      const fillOpacity =
+        z <= 11 ? 0.20 :
+        z === 12 ? 0.14 :
+        z === 13 ? 0.08 :
+        z === 14 ? 0.04 :
+        0.02
+      const strokeOpacity =
+        z <= 11 ? 0.55 :
+        z === 12 ? 0.45 :
+        z === 13 ? 0.32 :
+        z === 14 ? 0.20 :
+        0.12
+      const tooltipOpacity = z >= 14 ? 0 : 1
+      zipCirclesRef.current.forEach(({ circle }) => {
+        circle.setStyle({ fillOpacity, opacity: strokeOpacity })
+        const tt = circle.getTooltip?.()
+        if (tt) {
+          const el = tt.getElement?.()
+          if (el) el.style.opacity = String(tooltipOpacity)
+        }
+      })
+    }
+    updateZipStyles()
+    map.on('zoomend', updateZipStyles)
+    zoomHandlerRef.current = updateZipStyles
   }, [locations, selectedIndex, ready])
 
   return (

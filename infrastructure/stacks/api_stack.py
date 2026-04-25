@@ -21,69 +21,25 @@ class BlastRadiusApiStack(Stack):
         )
 
         data_bucket = s3.Bucket.from_bucket_name(
-            self, "DataBucket", "blast-radius-data-us-west-2"
+            self, "DataBucket", "economic-blast-radius-data-216989103356"
         )
 
-        # --- Worker Lambda (heavy — pandas/pyarrow, runs async) ---
-        worker_fn = _lambda.DockerImageFunction(
+        # --- Single Lambda for all API routes (simpler, faster deploy) ---
+        api_fn = _lambda.Function(
             self,
-            "AnalyzeWorker",
-            code=_lambda.DockerImageCode.from_image_asset(
-                directory=backend_dir,
-                file="Dockerfile.analyze",
+            "ApiFunction",
+            runtime=_lambda.Runtime.PYTHON_3_12,
+            handler="lambdas.analyze_handler.lambda_handler",
+            code=_lambda.Code.from_asset(
+                backend_dir,
+                exclude=[".*", "__pycache__", "*.pyc", "Dockerfile*"],
             ),
             memory_size=2048,
-            timeout=Duration.seconds(300),
+            timeout=Duration.seconds(60),
             environment={"DATA_BUCKET": data_bucket.bucket_name},
-            architecture=_lambda.Architecture.X86_64,
         )
-        data_bucket.grant_read(worker_fn)
-        data_bucket.grant_put(worker_fn, "results/*")
-
-        # --- Submit Lambda (lightweight — just invokes worker async) ---
-        submit_fn = _lambda.DockerImageFunction(
-            self,
-            "SubmitFunction",
-            code=_lambda.DockerImageCode.from_image_asset(
-                directory=backend_dir,
-                file="Dockerfile.submit",
-            ),
-            memory_size=256,
-            timeout=Duration.seconds(10),
-            environment={"WORKER_FUNCTION_NAME": worker_fn.function_name},
-            architecture=_lambda.Architecture.X86_64,
-        )
-        worker_fn.grant_invoke(submit_fn)
-
-        # --- Poll Lambda (lightweight — reads result from S3) ---
-        poll_fn = _lambda.DockerImageFunction(
-            self,
-            "PollFunction",
-            code=_lambda.DockerImageCode.from_image_asset(
-                directory=backend_dir,
-                file="Dockerfile.poll",
-            ),
-            memory_size=256,
-            timeout=Duration.seconds(10),
-            environment={"DATA_BUCKET": data_bucket.bucket_name},
-            architecture=_lambda.Architecture.X86_64,
-        )
-        data_bucket.grant_read(poll_fn, "results/*")
-
-        # --- ZCTA Boundaries Lambda ---
-        zcta_fn = _lambda.DockerImageFunction(
-            self,
-            "ZctaFunction",
-            code=_lambda.DockerImageCode.from_image_asset(
-                directory=backend_dir,
-                file="Dockerfile.zcta",
-            ),
-            memory_size=512,
-            timeout=Duration.seconds(30),
-            environment={"DATA_BUCKET": data_bucket.bucket_name},
-            architecture=_lambda.Architecture.X86_64,
-        )
-        data_bucket.grant_read(zcta_fn)
+        data_bucket.grant_read(api_fn)
+        data_bucket.grant_put(api_fn, "results/*")
 
         # --- API Gateway ---
         api = apigw.RestApi(
@@ -97,20 +53,23 @@ class BlastRadiusApiStack(Stack):
             ),
         )
 
+        # POST /analyze
         analyze_resource = api.root.add_resource("analyze")
         analyze_resource.add_method(
-            "POST", apigw.LambdaIntegration(submit_fn)
+            "POST", apigw.LambdaIntegration(api_fn)
         )
 
+        # GET /results/{job_id}
         results_resource = api.root.add_resource("results")
         job_resource = results_resource.add_resource("{job_id}")
         job_resource.add_method(
-            "GET", apigw.LambdaIntegration(poll_fn)
+            "GET", apigw.LambdaIntegration(api_fn)
         )
 
+        # GET /zcta-boundaries
         zcta_resource = api.root.add_resource("zcta-boundaries")
         zcta_resource.add_method(
-            "GET", apigw.LambdaIntegration(zcta_fn)
+            "GET", apigw.LambdaIntegration(api_fn)
         )
 
         CfnOutput(self, "ApiUrl", value=api.url, description="API Gateway URL")
@@ -132,7 +91,7 @@ class BlastRadiusApiStack(Stack):
             "ChurnShieldFrontend",
             name="ChurnShield",
             repository="https://github.com/shaashvat01/ChurnShield",
-            access_token="{{resolve:secretsmanager:churnshield/github-pat}}",
+            access_token="{{resolve:secretsmanager:github-token}}",
             iam_service_role=amplify_role.role_arn,
             platform="WEB_COMPUTE",
             environment_variables=[

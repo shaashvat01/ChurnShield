@@ -222,10 +222,10 @@ function ActionSearchBar({
       <div className="relative flex min-h-[300px] flex-col items-center justify-start">
         <div className="sticky top-0 z-10 w-full max-w-sm bg-background pt-4 pb-1">
           <label
-            className="mb-1 block font-medium text-gray-500 text-xs dark:text-gray-400"
+            className="mb-1 block font-medium text-gray-500 text-xs uppercase tracking-wider dark:text-gray-400"
             htmlFor="search"
           >
-            Search Commands
+            Select an employer event
           </label>
           <div className="relative">
             <Input
@@ -243,7 +243,7 @@ function ActionSearchBar({
               onChange={handleInputChange}
               onFocus={handleFocus}
               onKeyDown={handleKeyDown}
-              placeholder="What's up?"
+              placeholder="Search events or describe a layoff..."
               role="combobox"
               type="text"
               value={query}
@@ -340,9 +340,9 @@ function ActionSearchBar({
                   ))}
                 </motion.ul>
                 <div className="mt-2 border-gray-100 border-t px-3 py-2 dark:border-gray-800">
-                  <div className="flex items-center justify-between text-gray-500 text-xs">
-                    <span>Press ⌘K to open commands</span>
-                    <span>ESC to cancel</span>
+                  <div className="flex items-center justify-between text-gray-500 text-[10px] uppercase tracking-wider">
+                    <span>Census LODES · QCEW · WARN Act</span>
+                    <span>ESC to close</span>
                   </div>
                 </div>
               </motion.div>
