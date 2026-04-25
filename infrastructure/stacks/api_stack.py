@@ -185,7 +185,7 @@ applications:
             self,
             "MainBranch",
             app_id=amplify_app.attr_app_id,
-            branch_name="data",
+            branch_name="main",
             enable_auto_build=True,
             framework="Next.js - SSR",
             stage="PRODUCTION",
@@ -194,7 +194,7 @@ applications:
         CfnOutput(
             self,
             "AmplifyAppUrl",
-            value=f"https://data.{amplify_app.attr_default_domain}",
+            value=f"https://main.{amplify_app.attr_default_domain}",
             description="Amplify Frontend URL",
         )
         CfnOutput(
