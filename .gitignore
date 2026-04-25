@@ -53,12 +53,6 @@ data/*.json
 # ──────────────────────────────────────────────────────────────────
 infrastructure/cdk.out/
 
-# ──────────────────────────────────────────────────────────────────
-# Editor / tooling configs that don't belong to the project
-# ──────────────────────────────────────────────────────────────────
-.kiro/
-.cursor/
-.vscode/
 
 # ──────────────────────────────────────────────────────────────────
 # Markdown noise: status logs, planning docs, brain-dumps, etc.
