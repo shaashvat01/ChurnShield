@@ -2,13 +2,11 @@ from aws_cdk import (
     Stack,
     Duration,
     CfnOutput,
-    SecretValue,
     aws_lambda as _lambda,
     aws_apigateway as apigw,
     aws_s3 as s3,
     aws_iam as iam,
     aws_amplify as amplify,
-    aws_secretsmanager as sm,
 )
 from constructs import Construct
 import os
@@ -117,10 +115,7 @@ class BlastRadiusApiStack(Stack):
 
         CfnOutput(self, "ApiUrl", value=api.url, description="API Gateway URL")
 
-        # --- Amplify Frontend (GitHub PAT from Secrets Manager) ---
-        github_secret = sm.Secret.from_secret_name_v2(
-            self, "GitHubPat", "churnshield/github-pat"
-        )
+        # --- Amplify Frontend (GitHub PAT from Secrets Manager via dynamic reference) ---
 
         amplify_role = iam.Role(
             self,
@@ -138,8 +133,8 @@ class BlastRadiusApiStack(Stack):
             "ChurnShieldFrontend",
             name="ChurnShield",
             repository="https://github.com/shaashvat01/ChurnShield",
-            access_token=SecretValue.secrets_manager("churnshield/github-pat").to_string(),
-            iam_service_role_arn=amplify_role.role_arn,
+            access_token="{{resolve:secretsmanager:churnshield/github-pat}}",
+            iam_service_role=amplify_role.role_arn,
             platform="WEB_COMPUTE",
             environment_variables=[
                 amplify.CfnApp.EnvironmentVariableProperty(
