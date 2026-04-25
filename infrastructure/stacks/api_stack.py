@@ -115,8 +115,7 @@ class BlastRadiusApiStack(Stack):
 
         CfnOutput(self, "ApiUrl", value=api.url, description="API Gateway URL")
 
-        # --- Amplify Frontend (GitHub PAT from Secrets Manager via dynamic reference) ---
-
+        # --- Amplify Frontend (GitHub PAT from Secrets Manager) ---
         amplify_role = iam.Role(
             self,
             "AmplifyServiceRole",
