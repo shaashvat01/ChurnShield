@@ -11,6 +11,7 @@ import {
   TrendingDown,
   Users,
   DollarSign,
+  MapPin,
   X,
   Shield,
   Home as HomeIcon,
@@ -20,7 +21,11 @@ import {
   ArrowLeft,
   PieChart as PieChartIcon,
   BarChart as BarChartIcon,
-  Layers
+  Layers,
+  Utensils,
+  Hotel,
+  Building2,
+  ShoppingBag
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AreaChart } from "@/components/retroui/charts/AreaChart";
@@ -47,20 +52,20 @@ const SAMPLE_EVENTS = [
   },
 ];
 
-// Heatmap Data Clusters
+// Heatmap Data Clusters with Custom Icons
 const IMPACT_ZONES = [
-  { name: "Intel Ocotillo (Core)", type: "WORK", coords: [33.2764, -111.8906], loss: "$0M", label: "SOURCE", risk: "CRITICAL", rating: 9.9 },
-  { name: "South Chandler Residents", type: "HOME", coords: [33.2600, -111.8950], loss: "$42M", label: "-15%", risk: "HIGH", rating: 8.5 },
-  { name: "Price Corridor Retail", type: "RETAIL", coords: [33.2850, -111.8850], loss: "$88M", label: "-22%", risk: "CRITICAL", rating: 9.5 },
-  { name: "Sun Lakes Cluster", type: "HOME", coords: [33.2300, -111.9100], loss: "$28M", label: "-8%", risk: "MEDIUM", rating: 6.0 },
-  { name: "Downtown Chandler Hub", type: "RETAIL", coords: [33.3050, -111.8417], loss: "$56M", label: "-12%", risk: "HIGH", rating: 8.0 },
-  { name: "West Chandler Industrial", type: "WORK", coords: [33.3000, -111.9300], loss: "$34M", label: "-9%", risk: "MEDIUM", rating: 6.5 },
-  { name: "Gilbert Gateway Cluster", type: "HOME", coords: [33.2900, -111.7500], loss: "$18M", label: "-5%", risk: "LOW", rating: 4.0 },
-  { name: "Ocotillo Tech Supply", type: "WORK", coords: [33.2700, -111.9050], loss: "$64M", label: "-18%", risk: "HIGH", rating: 8.8 },
-  { name: "Queen Creek Edge", type: "HOME", coords: [33.2500, -111.6500], loss: "$12M", label: "-4%", risk: "LOW", rating: 3.5 },
-  { name: "Mesa Border Retail", type: "RETAIL", coords: [33.3300, -111.8800], loss: "$24M", label: "-7%", risk: "MEDIUM", rating: 5.5 },
-  { name: "Commuter Corridor A", type: "HOME", coords: [33.3200, -111.9500], loss: "$31M", label: "-10%", risk: "MEDIUM", rating: 6.2 },
-  { name: "Ahwatukee Housing", type: "HOME", coords: [33.3100, -112.0100], loss: "$45M", label: "-11%", risk: "HIGH", rating: 8.2 },
+  { name: "Intel Ocotillo (Core)", type: "WORK", icon: "/icons/office.svg", coords: [33.2764, -111.8906], loss: "$0M", label: "SOURCE", risk: "CRITICAL", rating: 9.9 },
+  { name: "South Chandler Residents", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2600, -111.8950], loss: "$42M", label: "-15%", risk: "HIGH", rating: 8.5 },
+  { name: "Price Corridor Retail", type: "RETAIL", icon: "/icons/retail.svg", coords: [33.2850, -111.8850], loss: "$88M", label: "-22%", risk: "CRITICAL", rating: 9.5 },
+  { name: "Sun Lakes Cluster", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2300, -111.9100], loss: "$28M", label: "-8%", risk: "MEDIUM", rating: 6.0 },
+  { name: "Downtown Chandler Hub", type: "RETAIL", icon: "/icons/restaurant.svg", coords: [33.3050, -111.8417], loss: "$56M", label: "-12%", risk: "HIGH", rating: 8.0 },
+  { name: "West Chandler Industrial", type: "WORK", icon: "/icons/office.svg", coords: [33.3000, -111.9300], loss: "$34M", label: "-9%", risk: "MEDIUM", rating: 6.5 },
+  { name: "Gilbert Gateway Cluster", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2900, -111.7500], loss: "$18M", label: "-5%", risk: "LOW", rating: 4.0 },
+  { name: "Ocotillo Tech Supply", type: "WORK", icon: "/icons/office.svg", coords: [33.2700, -111.9050], loss: "$64M", label: "-18%", risk: "HIGH", rating: 8.8 },
+  { name: "Queen Creek Edge", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2500, -111.6500], loss: "$12M", label: "-4%", risk: "LOW", rating: 3.5 },
+  { name: "Mesa Border Retail", type: "RETAIL", icon: "/icons/retail.svg", coords: [33.3300, -111.8800], loss: "$24M", label: "-7%", risk: "MEDIUM", rating: 5.5 },
+  { name: "Commuter Corridor A", type: "HOME", icon: "/icons/hotel.svg", coords: [33.3200, -111.9500], loss: "$31M", label: "-10%", risk: "MEDIUM", rating: 6.2 },
+  { name: "Ahwatukee Housing", type: "HOME", icon: "/icons/hotel.svg", coords: [33.3100, -112.0100], loss: "$45M", label: "-11%", risk: "HIGH", rating: 8.2 },
 ];
 
 export default function Home() {
@@ -75,6 +80,7 @@ export default function Home() {
     priceLabel: z.label,
     priceSubtext: z.risk,
     rating: z.rating,
+    iconUrl: z.icon,
     coordinates: z.coords as [number, number],
   }));
 
@@ -249,7 +255,7 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Detail Data Panel (Slides from Left) */}
+            {/* Detail Data Panel */}
             <AnimatePresence>
               {selectedLocation && (
                 <motion.div 
@@ -270,7 +276,14 @@ export default function Home() {
 
                     <div className="space-y-2 mb-8">
                       <Badge className="bg-indigo-600 text-white font-bold text-[10px] uppercase">{selectedLocation.priceSubtext} AREA</Badge>
-                      <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">{selectedLocation.name}</h3>
+                      <div className="flex items-center gap-3">
+                        {selectedLocation.iconUrl && (
+                          <div className="w-12 h-12 p-2.5 bg-slate-100 rounded-2xl flex items-center justify-center">
+                            <img src={selectedLocation.iconUrl} className="w-full h-full object-contain filter brightness-0" alt="" />
+                          </div>
+                        )}
+                        <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">{selectedLocation.name}</h3>
+                      </div>
                       <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">{selectedLocation.subtitle}</p>
                     </div>
 
@@ -313,7 +326,7 @@ export default function Home() {
                       </div>
 
                       <div className="grid grid-cols-2 gap-8">
-                        {/* Graph 2: Sector Exposure (Mock Bar) */}
+                        {/* Sector Exposure */}
                         <div className="space-y-4">
                           <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                             <PieChartIcon className="w-4 h-4" />
@@ -338,7 +351,7 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Graph 3: Demographics (Mock Pie Segment) */}
+                        {/* HH Risk Dist. */}
                         <div className="space-y-4">
                           <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
                             <Users className="w-4 h-4" />
@@ -354,10 +367,9 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Summary Text */}
                       <div className="p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100">
                         <p className="text-xs text-indigo-700 font-bold leading-relaxed uppercase tracking-tight">
-                          Predictive heuristic suggests that {selectedLocation.name} will experience a {selectedLocation.priceLabel} contraction in consumer liquidity within 120 days post-layoff.
+                          Predictive heuristic suggests that {selectedLocation.name} will experience a {selectedLocation.priceLabel} contraction.
                         </p>
                       </div>
                     </div>
