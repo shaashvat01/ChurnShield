@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY shared/ ${LAMBDA_TASK_ROOT}/shared/
 COPY lambdas/analyze_handler.py ${LAMBDA_TASK_ROOT}/
 
-CMD ["analyze_handler.handler"]
+CMD ["analyze_handler.lambda_handler"]

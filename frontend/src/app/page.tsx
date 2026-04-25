@@ -34,27 +34,19 @@ import { AnimatePresence, motion } from "framer-motion";
 const SAMPLE_EVENTS = [
   {
     id: "intel-1",
-    label: "Intel announces 1,500 layoffs at Chandler, AZ semiconductor fab",
+    label: "Intel announces 3,000 layoffs at Chandler, AZ semiconductor fab",
     icon: <Activity className="h-4 w-4 text-amber-500" />,
-    description: "Semiconductor workforce reduction",
-    short: "EVENT",
+    description: "Semiconductor workforce reduction · 4.9x Moretti multiplier",
+    short: "DEMO",
     end: "High Risk",
   },
   {
-    id: "tsmc-1",
-    label: "TSMC announces 800 layoffs at Phoenix, AZ chip plant",
-    icon: <Briefcase className="h-4 w-4 text-slate-500" />,
-    description: "Semiconductor supply chain impact",
-    short: "EVENT",
-    end: "Med Risk",
-  },
-  {
-    id: "wells-1",
-    label: "Wells Fargo announces 2,000 layoffs at Chandler, AZ operations center",
-    icon: <Building2 className="h-4 w-4 text-blue-500" />,
-    description: "Financial services reduction",
-    short: "EVENT",
-    end: "High Risk",
+    id: "microchip-recent",
+    label: "Microchip announces 500 layoffs at Tempe, AZ (WARN filed Oct 29, 2025)",
+    icon: <Briefcase className="h-4 w-4 text-blue-500" />,
+    description: "Semiconductor · Tempe blast radius (62 OSM businesses)",
+    short: "WARN",
+    end: "Active",
   },
 ];
 
@@ -68,35 +60,91 @@ export default function Home() {
     await analyze(action.label);
   };
 
+  // Source-employer label for the businesses-by-category subtitle
+  const epicenterLabel = data?.epicenter?.employer ?? "epicenter";
+
+  // Map locations: epicenter (red), then ZIP regions, then real businesses
   const mapLocations = data
-    ? data.zip_impacts.slice(0, 20).map((z) => ({
-        name: `ZIP ${z.zip_code}`,
-        subtitle: `${formatNumber(Math.round(z.estimated_jobs_lost))} jobs at risk · ${formatDollars(z.estimated_dollar_impact)}`,
-        image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400",
-        price: z.estimated_dollar_impact,
-        priceLabel: formatDollars(z.estimated_dollar_impact),
-        priceSubtext: z.commuter_share > 0.03 ? "HIGH" : z.commuter_share > 0.01 ? "MEDIUM" : "LOW",
-        rating: Math.min(z.commuter_share * 100, 10),
-        coordinates: [33.2764 + (Math.random() - 0.5) * 0.15, -111.8906 + (Math.random() - 0.5) * 0.15] as [number, number],
-        zipData: z,
-      }))
+    ? [
+        // Epicenter — the source employer (red marker on top)
+        ...(data.epicenter
+          ? [
+              {
+                name: `${data.epicenter.employer} ${data.epicenter.city}`,
+                subtitle: `Source event · ${formatNumber(data.epicenter.direct_jobs)} direct layoffs`,
+                image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400",
+                price: data.epicenter.direct_jobs,
+                priceLabel: data.epicenter.employer.toUpperCase(),
+                priceSubtext: `${formatNumber(data.epicenter.direct_jobs)} jobs cut`,
+                rating: 100,
+                coordinates: [
+                  data.epicenter.latitude,
+                  data.epicenter.longitude,
+                ] as [number, number],
+                epicenterData: data.epicenter,
+                markerType: "epicenter" as const,
+                category: "epicenter",
+              },
+            ]
+          : []),
+        // ZIP code markers (geographic circles, show dollar impact)
+        ...data.affected_zips.slice(0, 14).map((z) => ({
+          name: `ZIP ${z.zip_code} - ${z.city}`,
+          subtitle: `${formatNumber(Math.round(z.total_jobs_impact))} jobs at risk`,
+          image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=400",
+          price: z.dollar_impact,
+          priceLabel: formatDollars(z.dollar_impact),
+          priceSubtext: `${(z.commuter_share * 100).toFixed(0)}% of workforce`,
+          rating: z.commuter_share * 100,
+          coordinates: [z.latitude, z.longitude] as [number, number],
+          zipData: z,
+          markerType: "zip" as const,
+          category: "zip",
+        })),
+        // Real business markers (show revenue impact %)
+        ...Object.entries(data.businesses_by_category || {}).flatMap(([category, businesses]) =>
+          (businesses as any[]).slice(0, 6).map((b) => ({
+            name: b.name,
+            subtitle: `${b.distance_miles.toFixed(1)} mi from ${epicenterLabel} · ${category.replace("_", " ")}`,
+            image: category === "restaurant" 
+              ? "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400"
+              : category === "childcare"
+              ? "https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=400"
+              : "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=400",
+            price: b.estimated_revenue_impact_pct,
+            priceLabel: `-${b.estimated_revenue_impact_pct}%`,
+            priceSubtext: "predicted revenue loss",
+            rating: b.estimated_revenue_impact_pct,
+            coordinates: [b.latitude, b.longitude] as [number, number],
+            businessData: b,
+            markerType: "business" as const,
+            category: category,
+          }))
+        ),
+      ]
     : [];
+
+  // Center on the epicenter when available, else fall back to Intel Chandler
+  const mapCenter: [number, number] = data?.epicenter
+    ? [data.epicenter.latitude, data.epicenter.longitude]
+    : [33.3062, -111.8413];
 
   const mapData = {
     locations: mapLocations,
-    center: [33.2764, -111.8906] as [number, number],
+    center: mapCenter,
     zoom: 11,
-    title: data ? `Blast Radius: ${data.parsed_event.employer_name} ${data.parsed_event.city}` : "Economic Blast Radius",
+    title: data ? `Blast Radius: ${data.event.employer} ${data.event.location_city}` : "Economic Blast Radius",
     mapStyle: "voyager" as const,
     useHeatmap: true,
   };
 
-  const totalJobs = data
-    ? data.direct_impact.direct_jobs_lost + data.indirect_impact.indirect_jobs_lost
+  // Total businesses from business exposure
+  const totalBusinesses = data
+    ? data.business_exposure.reduce((sum, b) => sum + b.establishment_count, 0)
     : 0;
 
   return (
-    <main className="relative min-h-screen bg-slate-50 font-[family-name:var(--font-jetbrains-mono)] overflow-hidden">
+    <main className="relative min-h-screen bg-slate-50 font-sans overflow-hidden">
       {/* BACKGROUND MAP */}
       <div
         className={cn(
@@ -147,7 +195,7 @@ export default function Home() {
               </div>
 
               <div className="flex gap-4 justify-center">
-                {["Census LODES Data", "QCEW Wages", "WARN Act Notices"].map(
+                {["Moretti (2010) Multipliers", "Census LODES Data", "QCEW Wages", "WARN Act"].map(
                   (tag) => (
                     <Badge
                       key={tag}
@@ -233,8 +281,8 @@ export default function Home() {
               </Button>
               <div className="bg-indigo-900 text-white px-6 py-3 border border-indigo-950 font-bold uppercase text-xs flex items-center gap-3 rounded-xl shadow-lg shadow-indigo-100">
                 <Shield className="w-4 h-4 text-indigo-400" />
-                ACTIVE: {data.parsed_event.employer_name.toUpperCase()}{" "}
-                {data.parsed_event.city.toUpperCase()} IMPACT MATRIX
+                ACTIVE: {data.event.employer.toUpperCase()}{" "}
+                {data.event.location_city.toUpperCase()} IMPACT MATRIX
               </div>
             </div>
 
@@ -250,8 +298,7 @@ export default function Home() {
                   Impact Matrix
                 </h2>
                 <p className="text-[10px] font-bold text-amber-600 uppercase tracking-[0.2em]">
-                  {data.bls_comparison.data_vintage} · Moretti{" "}
-                  {data.indirect_impact.moretti_multiplier}x Multiplier
+                  {data.multiplier_source} · {data.multiplier}x Multiplier
                 </p>
               </div>
 
@@ -261,14 +308,14 @@ export default function Home() {
                   <div className="flex justify-between items-center mb-4">
                     <DollarSign className="w-6 h-6 text-amber-600" />
                     <Badge className="bg-amber-600 text-white border-none font-bold text-[10px] uppercase px-3 py-1">
-                      Consumer Spending Loss
+                      Quarterly Revenue Loss
                     </Badge>
                   </div>
                   <div className="text-6xl font-black text-amber-700 tracking-tighter leading-none">
-                    -{formatDollars(data.dollar_impact.consumer_spending_loss)}
+                    -{formatDollars(data.quarterly_revenue_loss)}
                   </div>
                   <p className="text-xs font-bold text-amber-900/40 mt-3 uppercase tracking-wider">
-                    Annual Economic Impact
+                    {data.confidence_interval}
                   </p>
                 </Card>
 
@@ -283,12 +330,12 @@ export default function Home() {
                     </Badge>
                   </div>
                   <div className="text-6xl font-black text-slate-900 tracking-tighter leading-none">
-                    {formatNumber(totalJobs)}
+                    {formatNumber(data.total_jobs_at_risk)}
                   </div>
                   <p className="text-xs font-bold text-slate-400 mt-3 uppercase tracking-wider">
-                    {formatNumber(data.direct_impact.direct_jobs_lost)} Direct +{" "}
-                    {formatNumber(data.indirect_impact.indirect_jobs_lost)}{" "}
-                    Indirect ({data.indirect_impact.industry_classification})
+                    {formatNumber(data.direct_jobs)} Direct +{" "}
+                    {formatNumber(data.indirect_jobs)}{" "}
+                    Indirect (Moretti {data.multiplier}x)
                   </p>
                 </Card>
 
@@ -296,7 +343,7 @@ export default function Home() {
                   <Card className="p-6 border border-slate-100 bg-slate-50 shadow-none rounded-3xl">
                     <MapPin className="w-5 h-5 text-indigo-500 mb-3" />
                     <div className="text-3xl font-black text-indigo-600">
-                      {data.zip_impacts.length}
+                      {data.affected_zips.length}
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">
                       ZIP Codes Hit
@@ -305,9 +352,7 @@ export default function Home() {
                   <Card className="p-6 border border-slate-100 bg-slate-50 shadow-none rounded-3xl">
                     <Building2 className="w-5 h-5 text-amber-500 mb-3" />
                     <div className="text-3xl font-black text-amber-600">
-                      {formatNumber(
-                        data.exposure_summary.total_affected_businesses
-                      )}
+                      {formatNumber(totalBusinesses)}
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">
                       Businesses Exposed
@@ -322,13 +367,9 @@ export default function Home() {
                   Most Exposed Business Sectors
                 </h4>
                 <div className="space-y-4">
-                  {data.exposure_summary.top_categories.map((cat, i) => {
-                    const maxScore =
-                      data.exposure_summary.top_categories[0]?.exposure_score ||
-                      1;
-                    const pct = Math.round(
-                      (cat.exposure_score / maxScore) * 100
-                    );
+                  {data.business_exposure.slice(0, 5).map((cat, i) => {
+                    const maxImpact = data.business_exposure[0]?.dollar_impact || 1;
+                    const pct = Math.round((cat.dollar_impact / maxImpact) * 100);
                     const colors = [
                       "bg-amber-600",
                       "bg-amber-400",
@@ -339,10 +380,8 @@ export default function Home() {
                     return (
                       <div key={cat.naics_code} className="space-y-2">
                         <div className="flex justify-between text-[11px] font-bold text-slate-700 uppercase tracking-tight">
-                          <span>{cat.naics_label}</span>
-                          <span>
-                            {formatNumber(cat.establishment_count)} est.
-                          </span>
+                          <span>{cat.naics_description}</span>
+                          <span>{formatDollars(cat.dollar_impact)}</span>
                         </div>
                         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                           <motion.div
@@ -352,67 +391,72 @@ export default function Home() {
                             className={cn("h-full", colors[i] || "bg-slate-300")}
                           />
                         </div>
+                        <div className="text-[9px] text-slate-400">
+                          {formatNumber(cat.establishment_count)} establishments
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* BLS Comparison */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                  BLS Comparison (Early Warning)
-                </h4>
-                <Card className="p-6 border border-slate-100 bg-indigo-50/30 shadow-none rounded-3xl space-y-4">
-                  <div className="flex justify-between">
-                    <div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">
-                        BLS Baseline
+              {/* Real Businesses at Risk - with Revenue Impact */}
+              {data.businesses_by_category && Object.keys(data.businesses_by_category).length > 0 && (
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    Real Businesses at Risk (OSM Data)
+                  </h4>
+                  {Object.entries(data.businesses_by_category).slice(0, 4).map(([category, businesses]) => (
+                    <div key={category} className="space-y-2">
+                      <div className="text-[10px] font-bold text-indigo-600 uppercase">
+                        {category.replace("_", " ")} ({businesses.length})
                       </div>
-                      <div className="text-xl font-black text-slate-900">
-                        {formatNumber(data.bls_comparison.baseline_employment)}
-                      </div>
+                      {businesses.slice(0, 4).map((biz: any, i: number) => (
+                        <div key={i} className="flex justify-between items-center text-[10px] pl-2 border-l-2 border-slate-200">
+                          <span className="text-slate-600 truncate max-w-[180px]">
+                            {biz.name}
+                          </span>
+                          <span className="text-amber-600 font-bold whitespace-nowrap">
+                            -{biz.estimated_revenue_impact_pct}%
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="text-right">
-                      <div className="text-[10px] font-bold text-amber-600 uppercase">
-                        Engine Predicted
-                      </div>
-                      <div className="text-xl font-black text-amber-700">
-                        {formatNumber(data.bls_comparison.predicted_employment)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider text-center">
-                    BLS won&apos;t report until{" "}
-                    {data.bls_comparison.projected_report_quarter} — We show it
-                    now
-                  </div>
-                </Card>
-              </div>
-
-              {/* WARN Cross-Reference */}
-              {data.direct_impact.warn_cross_referenced && (
-                <div className="p-5 bg-emerald-50 rounded-3xl border border-emerald-100 flex gap-4">
-                  <Info className="w-5 h-5 text-emerald-500 shrink-0" />
-                  <p className="text-xs text-emerald-700 leading-relaxed font-bold uppercase tracking-tight">
-                    Cross-referenced with{" "}
-                    {data.direct_impact.warn_notices_matched} Arizona WARN Act
-                    filings for {data.parsed_event.employer_name}
+                  ))}
+                  <p className="text-[8px] text-slate-400 italic">
+                    Revenue impact based on distance decay + category dependency
                   </p>
                 </div>
               )}
+
+              {/* Methodology */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                  Methodology
+                </h4>
+                <Card className="p-6 border border-slate-100 bg-indigo-50/30 shadow-none rounded-3xl space-y-4">
+                  <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
+                    Based on Moretti (2010) &quot;Local Multipliers&quot;
+                  </div>
+                  <div className="text-[9px] text-slate-500 leading-relaxed">
+                    High-tech industries generate {data.multiplier}x additional jobs in the 
+                    nontradable sector (restaurants, retail, services) for each tradable 
+                    sector job lost. American Economic Review, 100(2), 373-377.
+                  </div>
+                </Card>
+              </div>
 
               {/* Sources */}
               <div className="mt-auto space-y-2">
                 <h4 className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
                   Data Sources
                 </h4>
-                {data.sources.map((s, i) => (
+                {Object.entries(data.data_sources).slice(0, 4).map(([key, citation]) => (
                   <p
-                    key={i}
+                    key={key}
                     className="text-[9px] text-slate-400 font-medium leading-relaxed"
                   >
-                    {s}
+                    {citation}
                   </p>
                 ))}
               </div>
@@ -429,7 +473,7 @@ export default function Home() {
                 Top Affected ZIP Codes
               </h3>
               <div className="space-y-3">
-                {data.zip_impacts.slice(0, 10).map((z, i) => (
+                {data.affected_zips.slice(0, 10).map((z, i) => (
                   <div
                     key={z.zip_code}
                     className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100"
@@ -442,15 +486,12 @@ export default function Home() {
                         {z.zip_code}
                       </div>
                       <div className="text-[10px] font-bold text-slate-400 uppercase">
-                        {Math.round(z.estimated_jobs_lost)} jobs ·{" "}
-                        {z.distance_miles
-                          ? `${z.distance_miles} mi`
-                          : "N/A"}
+                        {z.city || "AZ"} · {formatNumber(z.total_jobs_impact)} jobs
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-black text-amber-600">
-                        {formatDollars(z.estimated_dollar_impact)}
+                        {formatDollars(z.dollar_impact)}
                       </div>
                       <div className="text-[10px] font-bold text-slate-400">
                         {(z.commuter_share * 100).toFixed(1)}%
@@ -480,47 +521,146 @@ export default function Home() {
                       Back to Matrix
                     </button>
 
-                    <div className="space-y-2 mb-8">
-                      <Badge className="bg-indigo-600 text-white font-bold text-[10px] uppercase">
-                        {selectedLocation.priceSubtext} IMPACT ZONE
-                      </Badge>
-                      <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">
-                        {selectedLocation.name}
-                      </h3>
-                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">
-                        {selectedLocation.subtitle}
-                      </p>
-                    </div>
+                    {/* Different content for ZIP vs Business */}
+                    {selectedLocation.markerType === "business" ? (
+                      // BUSINESS DETAIL VIEW
+                      <>
+                        <div className="space-y-2 mb-8">
+                          <Badge className={cn(
+                            "font-bold text-[10px] uppercase",
+                            selectedLocation.price > 30 ? "bg-red-600 text-white" :
+                            selectedLocation.price > 20 ? "bg-amber-500 text-white" :
+                            "bg-emerald-500 text-white"
+                          )}>
+                            {selectedLocation.price > 30 ? "HIGH RISK" : selectedLocation.price > 20 ? "MEDIUM RISK" : "MODERATE RISK"}
+                          </Badge>
+                          <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">
+                            {selectedLocation.name}
+                          </h3>
+                          <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                            {selectedLocation.subtitle}
+                          </p>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-6 mb-8">
-                      <Card className="p-6 border-slate-100 bg-slate-50 shadow-none rounded-3xl">
-                        <Activity className="w-5 h-5 text-indigo-600 mb-4" />
-                        <div className="text-xs font-black text-slate-400 uppercase mb-1">
-                          Dollar Impact
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                          <Card className="p-5 border-slate-100 bg-red-50 shadow-none rounded-2xl">
+                            <TrendingDown className="w-5 h-5 text-red-500 mb-3" />
+                            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                              Predicted Revenue Loss
+                            </div>
+                            <div className="text-3xl font-black text-red-600">
+                              {selectedLocation.priceLabel}
+                            </div>
+                          </Card>
+                          <Card className="p-5 border-slate-100 bg-slate-50 shadow-none rounded-2xl">
+                            <MapPin className="w-5 h-5 text-indigo-500 mb-3" />
+                            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                              Distance from {epicenterLabel}
+                            </div>
+                            <div className="text-3xl font-black text-indigo-600">
+                              {selectedLocation.businessData?.distance_miles?.toFixed(1) || "?"} mi
+                            </div>
+                          </Card>
                         </div>
-                        <div className="text-2xl font-black text-indigo-600">
-                          {selectedLocation.priceLabel}
-                        </div>
-                      </Card>
-                      <Card className="p-6 border-slate-100 bg-slate-50 shadow-none rounded-3xl">
-                        <Layers className="w-5 h-5 text-amber-500 mb-4" />
-                        <div className="text-xs font-black text-slate-400 uppercase mb-1">
-                          Risk Score
-                        </div>
-                        <div className="text-2xl font-black text-amber-600">
-                          {selectedLocation.rating?.toFixed(1)}/10
-                        </div>
-                      </Card>
-                    </div>
 
-                    <div className="p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100">
-                      <p className="text-xs text-indigo-700 font-bold leading-relaxed uppercase tracking-tight">
-                        LODES commute flow analysis indicates this ZIP code accounts for{" "}
-                        {selectedLocation.rating?.toFixed(1)}% of the employer&apos;s
-                        workforce residential distribution. Impact will materialize
-                        within 90-120 days post-event.
-                      </p>
-                    </div>
+                        <Card className="p-5 border border-amber-200 bg-amber-50/50 shadow-none rounded-2xl mb-6">
+                          <h4 className="text-[10px] font-black text-amber-700 uppercase mb-3">
+                            How We Calculated This
+                          </h4>
+                          <div className="space-y-2 text-[11px] text-amber-900">
+                            <div className="flex justify-between">
+                              <span>Base impact (category: {selectedLocation.category})</span>
+                              <span className="font-bold">40%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Distance decay ({selectedLocation.businessData?.distance_miles?.toFixed(1)} mi)</span>
+                              <span className="font-bold">-{(40 - (selectedLocation.price || 0)).toFixed(0)}%</span>
+                            </div>
+                            <div className="flex justify-between border-t border-amber-200 pt-2 mt-2">
+                              <span className="font-bold">Final predicted impact</span>
+                              <span className="font-black text-red-600">{selectedLocation.priceLabel}</span>
+                            </div>
+                          </div>
+                        </Card>
+
+                        <div className="p-5 bg-slate-100 rounded-2xl">
+                          <p className="text-[10px] text-slate-600 leading-relaxed">
+                            <strong>Methodology:</strong> Revenue impact calculated using distance-decay model 
+                            (closer businesses more affected) combined with category dependency scores 
+                            (restaurants 100%, retail 60%). Based on consumer spending patterns from 
+                            BLS Consumer Expenditure Survey.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      // ZIP CODE DETAIL VIEW
+                      <>
+                        <div className="space-y-2 mb-8">
+                          <Badge className="bg-amber-600 text-white font-bold text-[10px] uppercase">
+                            {selectedLocation.rating > 10 ? "HIGH IMPACT ZONE" : selectedLocation.rating > 5 ? "MEDIUM IMPACT" : "AFFECTED AREA"}
+                          </Badge>
+                          <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">
+                            {selectedLocation.name}
+                          </h3>
+                          <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                            {selectedLocation.subtitle}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                          <Card className="p-5 border-slate-100 bg-amber-50 shadow-none rounded-2xl">
+                            <DollarSign className="w-5 h-5 text-amber-600 mb-3" />
+                            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                              Quarterly Impact
+                            </div>
+                            <div className="text-3xl font-black text-amber-700">
+                              {selectedLocation.priceLabel}
+                            </div>
+                          </Card>
+                          <Card className="p-5 border-slate-100 bg-slate-50 shadow-none rounded-2xl">
+                            <Users className="w-5 h-5 text-indigo-500 mb-3" />
+                            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">
+                              Commuter Share
+                            </div>
+                            <div className="text-3xl font-black text-indigo-600">
+                              {selectedLocation.rating?.toFixed(0)}%
+                            </div>
+                          </Card>
+                        </div>
+
+                        <Card className="p-5 border border-indigo-200 bg-indigo-50/50 shadow-none rounded-2xl mb-6">
+                          <h4 className="text-[10px] font-black text-indigo-700 uppercase mb-3">
+                            LODES Commute Flow Analysis
+                          </h4>
+                          <div className="space-y-2 text-[11px] text-indigo-900">
+                            <div className="flex justify-between">
+                              <span>Workers commuting from this ZIP</span>
+                              <span className="font-bold">{selectedLocation.rating?.toFixed(1)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Direct jobs impact</span>
+                              <span className="font-bold">{formatNumber(selectedLocation.zipData?.direct_jobs_impact || 0)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Indirect jobs impact ({data.multiplier}x)</span>
+                              <span className="font-bold">{formatNumber(selectedLocation.zipData?.indirect_jobs_impact || 0)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-indigo-200 pt-2 mt-2">
+                              <span className="font-bold">Total jobs at risk</span>
+                              <span className="font-black text-amber-600">{formatNumber(selectedLocation.zipData?.total_jobs_impact || 0)}</span>
+                            </div>
+                          </div>
+                        </Card>
+
+                        <div className="p-5 bg-slate-100 rounded-2xl">
+                          <p className="text-[10px] text-slate-600 leading-relaxed">
+                            <strong>Data Source:</strong> Census LEHD LODES Origin-Destination data shows 
+                            where {epicenterLabel} {data.event.location_city} workers live. This ZIP accounts for {selectedLocation.rating?.toFixed(1)}% 
+                            of the workforce. Impact distributed proportionally using Moretti (2010) {data.multiplier}x multiplier.
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -537,7 +677,7 @@ export default function Home() {
           className="absolute bottom-0 left-0 right-0 z-50 bg-slate-900/95 backdrop-blur text-white px-8 py-5"
         >
           <p className="text-xs font-bold uppercase tracking-wider text-center text-amber-300">
-            {data.headline}
+            {data.headline_summary}
           </p>
         </motion.div>
       )}

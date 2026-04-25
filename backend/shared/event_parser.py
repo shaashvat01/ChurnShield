@@ -4,10 +4,76 @@ Uses regex patterns to identify employer, city, state, event type, and magnitude
 Resolves location to county FIPS and ZIP codes using the LODES crosswalk.
 """
 import re
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, List
 import pandas as pd
 
-from .models import ParsedEvent, EventType, MagnitudeType
+
+@dataclass
+class ParsedEvent:
+    """Simplified parsed event for the analysis pipeline."""
+    employer: str
+    location_city: str
+    location_state: str
+    location_zip: Optional[str]
+    direct_jobs: int
+    naics_code: Optional[str] = None
+    industry: Optional[str] = None
+    event_type: str = "LAYOFF"
+    county_fips: Optional[str] = None
+    census_blocks: Optional[List[str]] = None
+    # Geographic epicenter of the source employer (for map rendering).
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+# Hardcoded Intel Chandler event for demo
+# Coords: Intel Ocotillo campus, 4500 S Dobson Rd, Chandler, AZ
+INTEL_CHANDLER_EVENT = ParsedEvent(
+    employer="Intel",
+    location_city="Chandler",
+    location_state="AZ",
+    location_zip="85224",
+    direct_jobs=3000,
+    naics_code="3344",
+    industry="semiconductor",
+    event_type="LAYOFF",
+    county_fips="04013",  # Maricopa County
+    census_blocks=None,
+    latitude=33.3062,
+    longitude=-111.8413,
+)
+
+
+# Microchip Technology Tempe event (WARN Act notice filed Oct 29, 2025)
+# Coords: Microchip Technology HQ area, Tempe, AZ
+MICROCHIP_TEMPE_EVENT = ParsedEvent(
+    employer="Microchip",
+    location_city="Tempe",
+    location_state="AZ",
+    location_zip="85281",
+    direct_jobs=500,
+    naics_code="3344",
+    industry="semiconductor",
+    event_type="LAYOFF",
+    county_fips="04013",  # Maricopa County
+    census_blocks=None,
+    latitude=33.4255,
+    longitude=-111.9400,
+)
+
+
+# Legacy Pydantic-style enums for compatibility
+class EventType:
+    LAYOFF = "LAYOFF"
+    PLANT_CLOSURE = "PLANT_CLOSURE"
+    ACQUISITION = "ACQUISITION"
+    EARNINGS_MISS = "EARNINGS_MISS"
+
+
+class MagnitudeType:
+    HEADCOUNT = "headcount"
+    PERCENTAGE = "percentage"
 
 
 class ParseError(Exception):

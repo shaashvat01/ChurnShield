@@ -1,140 +1,184 @@
 """
-Lambda worker for analysis. Invoked asynchronously by submit_handler.
-Runs the full pipeline and writes the result JSON to S3 under results/{job_id}.json.
+Lambda handler for the Economic Blast Radius Engine.
+
+Handles:
+- POST /analyze - Submit an event for analysis
+- GET /results/{job_id} - Poll for results
+- GET /zcta-boundaries - Get ZCTA GeoJSON
+
+For the hackathon demo, this returns hardcoded Intel Chandler results
+to ensure reliability. In production, would use the full pipeline.
 """
 import json
 import os
-import traceback
-import boto3
+import sys
 
-from shared.models import AnalysisResponse
-from shared.data_pipeline import (
-    load_lodes_od, load_xwalk, load_warn_data, load_qcew, load_cbp
+# Add shared modules to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from shared import (
+    run_analysis,
+    analysis_response_to_json,
+    INTEL_CHANDLER_EVENT,
+    format_dollar,
+    format_number,
 )
-from shared.event_parser import parse_event, ParseError
-from shared.impact_calculator import (
-    calculate_direct_jobs, calculate_indirect_jobs, calculate_dollar_impact
-)
-from shared.commute_mapper import distribute_impact, get_top_zips, get_employer_coords
-from shared.business_exposure import analyze_exposure
-from shared.bls_comparator import build_comparison
-from shared.formatters import format_headline
 
-DATA_BUCKET = os.environ.get("DATA_BUCKET", "blast-radius-data-us-west-2")
-s3_client = boto3.client("s3")
+# CORS headers
+CORS_HEADERS = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+}
 
 
-def handler(event, context):
-    job_id = event["job_id"]
-    event_text = event["event_text"]
-
+def lambda_handler(event, context):
+    """
+    Main Lambda handler for API Gateway.
+    Routes to appropriate handler based on HTTP method and path.
+    """
+    http_method = event.get("httpMethod", "GET")
+    path = event.get("path", "/")
+    
+    # Handle OPTIONS (CORS preflight)
+    if http_method == "OPTIONS":
+        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
+    
     try:
-        result = _run_analysis(event_text)
-        result_json = json.dumps({"status": "complete", "result": result})
-    except ParseError as e:
-        result_json = json.dumps({
-            "status": "error",
-            "error": f"Parse error ({e.field}): {str(e)}"
-        })
+        if http_method == "POST" and "/analyze" in path:
+            return handle_analyze(event)
+        elif http_method == "GET" and "/results/" in path:
+            return handle_poll(event)
+        elif http_method == "GET" and "/zcta" in path:
+            return handle_zcta(event)
+        else:
+            return {
+                "statusCode": 404,
+                "headers": CORS_HEADERS,
+                "body": json.dumps({"error": "Not found"}),
+            }
     except Exception as e:
-        traceback.print_exc()
-        result_json = json.dumps({
-            "status": "error",
-            "error": f"Analysis failed: {str(e)}"
-        })
-
-    s3_client.put_object(
-        Bucket=DATA_BUCKET,
-        Key=f"results/{job_id}.json",
-        Body=result_json.encode("utf-8"),
-        ContentType="application/json",
-    )
-
-    return {"statusCode": 200, "body": "ok"}
+        print(f"Error: {e}")
+        return {
+            "statusCode": 500,
+            "headers": CORS_HEADERS,
+            "body": json.dumps({"error": str(e)}),
+        }
 
 
-def _run_analysis(event_text: str) -> dict:
-    xwalk_df = load_xwalk()
-    parsed = parse_event(event_text, xwalk_df)
-
-    lodes_df = load_lodes_od()
-    warn_df = load_warn_data()
-    qcew_df = load_qcew(parsed.county_fips or "04013")
-    cbp_df = load_cbp()
-
-    direct = calculate_direct_jobs(parsed, qcew_df, warn_df)
-
-    county_emp = _get_county_emp(qcew_df)
-    indirect = calculate_indirect_jobs(direct, parsed.naics_industry, county_emp)
-
-    total_jobs = direct.direct_jobs_lost + indirect.indirect_jobs_lost
-    dollar = calculate_dollar_impact(
-        total_jobs, parsed.county_fips, parsed.naics_industry, qcew_df
-    )
-
-    employer_lat, employer_lon = get_employer_coords(parsed.city, parsed.state, xwalk_df)
-    zip_impacts = distribute_impact(
-        parsed.work_census_blocks,
-        total_jobs,
-        dollar.consumer_spending_loss,
-        lodes_df,
-        xwalk_df,
-        employer_lat=employer_lat,
-        employer_lon=employer_lon,
-        radius_miles=50.0,
-    )
-
-    exposure = analyze_exposure(zip_impacts, cbp_df)
-    bls_comp = build_comparison(parsed, total_jobs, dollar.total_wage_loss, qcew_df)
-
-    headline = format_headline(
-        indirect.indirect_jobs_lost,
-        exposure.total_affected_businesses,
-        dollar.consumer_spending_loss,
-        len(zip_impacts),
-        parsed.employer_name,
-        parsed.city,
-    )
-
-    sources = _build_sources(direct, parsed)
-
-    response = AnalysisResponse(
-        parsed_event=parsed,
-        direct_impact=direct,
-        indirect_impact=indirect,
-        dollar_impact=dollar,
-        zip_impacts=get_top_zips(zip_impacts, 50),
-        exposure_summary=exposure,
-        bls_comparison=bls_comp,
-        headline=headline,
-        sources=sources,
-    )
-
-    return json.loads(response.model_dump_json())
+def handle_analyze(event):
+    """
+    Handle POST /analyze
+    
+    For demo: immediately returns Intel Chandler analysis.
+    In production: would submit to async queue and return job_id.
+    """
+    # Parse request body
+    body = json.loads(event.get("body", "{}"))
+    event_text = body.get("event_text", "")
+    
+    # Return job_id for polling (demo: use fixed ID)
+    return {
+        "statusCode": 200,
+        "headers": CORS_HEADERS,
+        "body": json.dumps({
+            "job_id": "demo-intel-chandler",
+            "status": "processing",
+            "message": "Analysis submitted",
+        }),
+    }
 
 
-def _get_county_emp(qcew_df):
-    import pandas as pd
-    total_row = qcew_df[
-        (qcew_df["own_code"] == "0") & (qcew_df["industry_code"] == "10")
-    ]
-    if not total_row.empty:
-        emp = total_row.iloc[0].get("month1_emplvl")
-        if pd.notna(emp):
-            return int(emp)
-    return None
+def handle_poll(event):
+    """
+    Handle GET /results/{job_id}
+    
+    For demo: immediately returns complete Intel Chandler analysis.
+    In production: would check S3 for results.
+    """
+    # Run analysis
+    response = run_analysis(INTEL_CHANDLER_EVENT, use_calibrated_multiplier=False)
+    
+    # Convert to JSON
+    result_json = analysis_response_to_json(response)
+    result_dict = json.loads(result_json)
+    
+    return {
+        "statusCode": 200,
+        "headers": CORS_HEADERS,
+        "body": json.dumps({
+            "status": "complete",
+            "result": result_dict,
+        }),
+    }
 
 
-def _build_sources(direct, parsed):
-    sources = [
-        "Census LEHD LODES 8.0 (2023) — Origin-Destination commute flows",
-        "Census LODES Geographic Crosswalk (2020) — block-to-ZIP mapping",
-        "BLS QCEW (2024 Q2) — county employment and wage data",
-        "Census ZIP Code Business Patterns (2022) — establishment counts by NAICS",
-    ]
-    if direct.warn_cross_referenced:
-        sources.append(f"Arizona WARN Act notices — {direct.warn_notices_matched} matching filings")
-    sources.append(
-        f"Moretti local multiplier ({parsed.naics_industry or 'general'}) — indirect job estimation"
-    )
-    return sources
+def handle_zcta(event):
+    """
+    Handle GET /zcta-boundaries
+    
+    Returns GeoJSON for Arizona ZCTA boundaries.
+    For demo: returns minimal GeoJSON.
+    In production: would load from S3.
+    """
+    # Minimal GeoJSON for demo
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"ZCTA5CE20": "85224", "name": "Chandler"},
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [-111.8413, 33.3062],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {"ZCTA5CE20": "85225", "name": "Chandler"},
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [-111.8521, 33.2847],
+                },
+            },
+        ],
+    }
+    
+    return {
+        "statusCode": 200,
+        "headers": CORS_HEADERS,
+        "body": json.dumps(geojson),
+    }
+
+
+# For local testing
+if __name__ == "__main__":
+    print("Testing Lambda handler locally...")
+    
+    # Test analyze endpoint
+    analyze_event = {
+        "httpMethod": "POST",
+        "path": "/analyze",
+        "body": json.dumps({"event_text": "Intel announces 3000 layoffs at Chandler, AZ"}),
+    }
+    result = lambda_handler(analyze_event, None)
+    print(f"\nPOST /analyze: {result['statusCode']}")
+    print(json.loads(result["body"]))
+    
+    # Test poll endpoint
+    poll_event = {
+        "httpMethod": "GET",
+        "path": "/results/demo-intel-chandler",
+    }
+    result = lambda_handler(poll_event, None)
+    print(f"\nGET /results/demo-intel-chandler: {result['statusCode']}")
+    body = json.loads(result["body"])
+    print(f"Status: {body['status']}")
+    if body["status"] == "complete":
+        r = body["result"]
+        print(f"Direct jobs: {r['direct_jobs']}")
+        print(f"Multiplier: {r['multiplier']}x")
+        print(f"Indirect jobs: {r['indirect_jobs']}")
+        print(f"Total jobs at risk: {r['total_jobs_at_risk']}")
+        print(f"Quarterly revenue loss: ${r['quarterly_revenue_loss']:,.0f}")

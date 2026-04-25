@@ -1,8 +1,40 @@
-# Environment variables
+# ──────────────────────────────────────────────────────────────────
+# Environment + secrets
+# ──────────────────────────────────────────────────────────────────
 .env
 .env.*
 
-# Data files (in S3)
+# ──────────────────────────────────────────────────────────────────
+# OS / filesystem cruft (this repo lives on an external SSD,
+# so macOS sprays AppleDouble files everywhere)
+# ──────────────────────────────────────────────────────────────────
+.DS_Store
+._*
+Thumbs.db
+
+# ──────────────────────────────────────────────────────────────────
+# Node / Next.js
+# ──────────────────────────────────────────────────────────────────
+node_modules/
+.next/
+out/
+.turbo/
+
+# ──────────────────────────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ──────────────────────────────────────────────────────────────────
+# Raw / large datasets (kept in S3 in production)
+# ──────────────────────────────────────────────────────────────────
 data/*.csv
 data/*.txt
 data/*.parquet
@@ -14,15 +46,55 @@ data/*.cpg
 data/*.xml
 data/*.zip
 data/*.geojson
+data/*.json
 
-# Node
-node_modules/
-.next/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# CDK
+# ──────────────────────────────────────────────────────────────────
+# CDK / infra build artifacts
+# ──────────────────────────────────────────────────────────────────
 infrastructure/cdk.out/
+
+# ──────────────────────────────────────────────────────────────────
+# Editor / tooling configs that don't belong to the project
+# ──────────────────────────────────────────────────────────────────
+.kiro/
+.cursor/
+.vscode/
+
+# ──────────────────────────────────────────────────────────────────
+# Markdown noise: status logs, planning docs, brain-dumps, etc.
+# Keep README.md in the repo. Everything else markdown is local-only.
+# ──────────────────────────────────────────────────────────────────
+*.md
+!README.md
+!frontend/**/README.md
+!backend/**/README.md
+
+# Specific known noise (explicit, in case the glob ever loosens)
+AWS_SAGEMAKER_DEPLOYMENT.md
+CRITICAL_STATUS_4H.md
+DATA_ANALYSIS_COMPLETE.md
+DEPLOYMENT_CHECKLIST.md
+EXECUTION_PLAN.md
+FINAL_STATUS_4H.md
+FULL_STACK_READY.md
+IMMEDIATE_ACTION_PLAN.md
+PHASE_1_COMPLETE.md
+Presentation*Style.md
+cursor_aws_configuration_and_project_de.md
+finale.md
+
+# ──────────────────────────────────────────────────────────────────
+# Unrelated sibling projects that ended up under this folder
+# ──────────────────────────────────────────────────────────────────
+CLAUSE-Benchmark/
+Dell_Project/
+aidlc-docs/
+sleeper-agents-in-legal-ai/
+
+# ──────────────────────────────────────────────────────────────────
+# Stray reports / junk
+# ──────────────────────────────────────────────────────────────────
+comprehensive_analysis_report.json
+data_analysis_results.json
+win.txt
+*.log
