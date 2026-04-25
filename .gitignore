@@ -1,32 +1,4 @@
-# macOS resource forks
-._*
-.DS_Store
-
 # Environment variables
 .env
 .env.*
-
-# Data files (in S3)
-data/*.csv
-data/*.txt
-data/*.parquet
-data/*.shp
-data/*.shx
-data/*.dbf
-data/*.prj
-data/*.cpg
-data/*.xml
-data/*.zip
-data/*.geojson
-
-# Node
-node_modules/
-.next/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# CDK
-infrastructure/cdk.out/
+backend/

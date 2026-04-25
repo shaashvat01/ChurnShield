@@ -28,6 +28,7 @@ export interface Location {
   priceLabel?: string
   priceSubtext?: string
   rating?: number
+  iconUrl?: string
   coordinates: [number, number] // [lat, lng]
   link?: string
 }
@@ -586,6 +587,7 @@ function VanillaLeafletMap({
           transform: translate(-50%, -50%);
           animation: heatmap-pulse 2s infinite ease-in-out;
         ">
+        ${location.iconUrl ? `<img src="${location.iconUrl}" style="width: 60%; height: 60%; object-fit: contain; filter: brightness(0) invert(1);" />` : ''}
         </div>
       ` : `
         <div style="

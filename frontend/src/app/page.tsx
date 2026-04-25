@@ -14,6 +14,8 @@ import {
   TrendingDown,
   Users,
   DollarSign,
+  MapPin,
+  X,
   Shield,
   Home as HomeIcon,
   Briefcase,
@@ -23,11 +25,10 @@ import {
   PieChart as PieChartIcon,
   BarChart as BarChartIcon,
   Layers,
-  MapPin,
+  Utensils,
+  Hotel,
   Building2,
-  Loader2,
-  AlertTriangle,
-  Search,
+  ShoppingBag
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -48,20 +49,39 @@ const SAMPLE_EVENTS = [
     short: "EVENT",
     end: "Med Risk",
   },
-  {
-    id: "wells-1",
-    label: "Wells Fargo announces 2,000 layoffs at Chandler, AZ operations center",
-    icon: <Building2 className="h-4 w-4 text-blue-500" />,
-    description: "Financial services reduction",
-    short: "EVENT",
-    end: "High Risk",
-  },
+];
+
+// Heatmap Data Clusters with Custom Icons
+const IMPACT_ZONES = [
+  { name: "Intel Ocotillo (Core)", type: "WORK", icon: "/icons/office.svg", coords: [33.2764, -111.8906], loss: "$0M", label: "SOURCE", risk: "CRITICAL", rating: 9.9 },
+  { name: "South Chandler Residents", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2600, -111.8950], loss: "$42M", label: "-15%", risk: "HIGH", rating: 8.5 },
+  { name: "Price Corridor Retail", type: "RETAIL", icon: "/icons/retail.svg", coords: [33.2850, -111.8850], loss: "$88M", label: "-22%", risk: "CRITICAL", rating: 9.5 },
+  { name: "Sun Lakes Cluster", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2300, -111.9100], loss: "$28M", label: "-8%", risk: "MEDIUM", rating: 6.0 },
+  { name: "Downtown Chandler Hub", type: "RETAIL", icon: "/icons/restaurant.svg", coords: [33.3050, -111.8417], loss: "$56M", label: "-12%", risk: "HIGH", rating: 8.0 },
+  { name: "West Chandler Industrial", type: "WORK", icon: "/icons/office.svg", coords: [33.3000, -111.9300], loss: "$34M", label: "-9%", risk: "MEDIUM", rating: 6.5 },
+  { name: "Gilbert Gateway Cluster", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2900, -111.7500], loss: "$18M", label: "-5%", risk: "LOW", rating: 4.0 },
+  { name: "Ocotillo Tech Supply", type: "WORK", icon: "/icons/office.svg", coords: [33.2700, -111.9050], loss: "$64M", label: "-18%", risk: "HIGH", rating: 8.8 },
+  { name: "Queen Creek Edge", type: "HOME", icon: "/icons/hotel.svg", coords: [33.2500, -111.6500], loss: "$12M", label: "-4%", risk: "LOW", rating: 3.5 },
+  { name: "Mesa Border Retail", type: "RETAIL", icon: "/icons/retail.svg", coords: [33.3300, -111.8800], loss: "$24M", label: "-7%", risk: "MEDIUM", rating: 5.5 },
+  { name: "Commuter Corridor A", type: "HOME", icon: "/icons/hotel.svg", coords: [33.3200, -111.9500], loss: "$31M", label: "-10%", risk: "MEDIUM", rating: 6.2 },
+  { name: "Ahwatukee Housing", type: "HOME", icon: "/icons/hotel.svg", coords: [33.3100, -112.0100], loss: "$45M", label: "-11%", risk: "HIGH", rating: 8.2 },
 ];
 
 export default function Home() {
   const [view, setView] = useState<"landing" | "results">("landing");
   const [selectedLocation, setSelectedLocation] = useState<any>(null);
-  const { data, loading, error, status, analyze } = useAnalysis();
+  
+  const mapLocations = IMPACT_ZONES.map(z => ({
+    name: z.name,
+    subtitle: `${z.type} Zone - Churn Impact: ${z.label}`,
+    image: `https://images.unsplash.com/photo-${z.type === 'HOME' ? '1480074568708-e7b720bb3f09' : '1486406146926-c627a92ad1ab'}?w=400`,
+    price: parseFloat(z.loss.replace('$', '')),
+    priceLabel: z.label,
+    priceSubtext: z.risk,
+    rating: z.rating,
+    iconUrl: z.icon,
+    coordinates: z.coords as [number, number],
+  }));
 
   const handleEventSelect = async (action: { id: string; label: string }) => {
     setView("results");
@@ -418,50 +438,7 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Top ZIP Codes Panel (Right Side) */}
-            <motion.div
-              initial={{ x: 400 }}
-              animate={{ x: 0 }}
-              transition={{ type: "spring", damping: 25, stiffness: 200, delay: 0.3 }}
-              className="absolute right-0 top-20 w-[360px] max-h-[calc(100vh-120px)] bg-white/95 backdrop-blur-md border-l border-slate-200 p-8 overflow-y-auto pointer-events-auto shadow-2xl z-40 rounded-l-3xl"
-            >
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">
-                Top Affected ZIP Codes
-              </h3>
-              <div className="space-y-3">
-                {data.zip_impacts.slice(0, 10).map((z, i) => (
-                  <div
-                    key={z.zip_code}
-                    className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100"
-                  >
-                    <div className="text-lg font-black text-slate-300 w-6">
-                      {i + 1}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm font-black text-slate-900">
-                        {z.zip_code}
-                      </div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">
-                        {Math.round(z.estimated_jobs_lost)} jobs ·{" "}
-                        {z.distance_miles
-                          ? `${z.distance_miles} mi`
-                          : "N/A"}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-black text-amber-600">
-                        {formatDollars(z.estimated_dollar_impact)}
-                      </div>
-                      <div className="text-[10px] font-bold text-slate-400">
-                        {(z.commuter_share * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Detail Data Panel (Slides from Left on marker click) */}
+            {/* Detail Data Panel */}
             <AnimatePresence>
               {selectedLocation && (
                 <motion.div
@@ -481,15 +458,16 @@ export default function Home() {
                     </button>
 
                     <div className="space-y-2 mb-8">
-                      <Badge className="bg-indigo-600 text-white font-bold text-[10px] uppercase">
-                        {selectedLocation.priceSubtext} IMPACT ZONE
-                      </Badge>
-                      <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">
-                        {selectedLocation.name}
-                      </h3>
-                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">
-                        {selectedLocation.subtitle}
-                      </p>
+                      <Badge className="bg-indigo-600 text-white font-bold text-[10px] uppercase">{selectedLocation.priceSubtext} AREA</Badge>
+                      <div className="flex items-center gap-3">
+                        {selectedLocation.iconUrl && (
+                          <div className="w-12 h-12 p-2.5 bg-slate-100 rounded-2xl flex items-center justify-center">
+                            <img src={selectedLocation.iconUrl} className="w-full h-full object-contain filter brightness-0" alt="" />
+                          </div>
+                        )}
+                        <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tight leading-none">{selectedLocation.name}</h3>
+                      </div>
+                      <p className="text-sm font-bold text-slate-400 uppercase tracking-wider">{selectedLocation.subtitle}</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-6 mb-8">
@@ -513,13 +491,77 @@ export default function Home() {
                       </Card>
                     </div>
 
-                    <div className="p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100">
-                      <p className="text-xs text-indigo-700 font-bold leading-relaxed uppercase tracking-tight">
-                        LODES commute flow analysis indicates this ZIP code accounts for{" "}
-                        {selectedLocation.rating?.toFixed(1)}% of the employer&apos;s
-                        workforce residential distribution. Impact will materialize
-                        within 90-120 days post-event.
-                      </p>
+                    {/* Visualization Grid */}
+                    <div className="space-y-8">
+                      {/* Graph 1: Churn Velocity */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                            <BarChartIcon className="w-4 h-4" />
+                            90-Day Churn Projection
+                          </h4>
+                        </div>
+                        <div className="h-48 w-full bg-slate-50 rounded-3xl border border-slate-100 p-6">
+                           <AreaChart 
+                              data={velocityData}
+                              index="month"
+                              categories={["impact"]}
+                              strokeColors={["#4f46e5"]}
+                              fillColors={["#eef2ff"]}
+                              className="h-full w-full"
+                              showGrid={false}
+                              valueFormatter={(v) => `${v}%`}
+                            />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-8">
+                        {/* Sector Exposure */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                            <PieChartIcon className="w-4 h-4" />
+                            Sector Exposure
+                          </h4>
+                          <div className="space-y-3">
+                            {[
+                              { label: "Retail", val: 85, color: "bg-indigo-600" },
+                              { label: "Service", val: 45, color: "bg-amber-400" },
+                              { label: "Supply", val: 30, color: "bg-slate-300" },
+                            ].map((s, i) => (
+                              <div key={i} className="space-y-1">
+                                <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                                  <span>{s.label}</span>
+                                  <span>{s.val}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className={cn("h-full rounded-full", s.color)} style={{ width: `${s.val}%` }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* HH Risk Dist. */}
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            HH Risk Dist.
+                          </h4>
+                          <div className="aspect-square w-full rounded-full border-8 border-slate-50 flex items-center justify-center relative">
+                            <div className="absolute inset-0 rounded-full border-8 border-indigo-600" style={{ clipPath: 'polygon(50% 50%, 100% 0, 100% 100%, 0 100%)' }} />
+                            <div className="text-center">
+                              <div className="text-xl font-black text-slate-900">72%</div>
+                              <div className="text-[8px] font-bold text-slate-400 uppercase">High Risk</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-6 bg-indigo-50/50 rounded-3xl border border-indigo-100">
+                        <p className="text-xs text-indigo-700 font-bold leading-relaxed uppercase tracking-tight">
+                          Predictive heuristic suggests that {selectedLocation.name} will experience a {selectedLocation.priceLabel} contraction.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
